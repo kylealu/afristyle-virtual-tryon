@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AfriStyle — Virtual Try-On</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #C9A84C;
+    --gold-light: #F0D080;
+    --dark: #0E0C0A;
+    --surface: #1A1714;
+    --surface2: #241F1A;
+    --border: rgba(201,168,76,0.2);
+    --text: #F5EDD8;
+    --muted: #8A7D65;
+    --green: #4CAF79;
+    --red: #E05A4A;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--dark); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events: none; z-index: 0; opacity: 0.6; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; border-bottom: 1px solid var(--border); position: relative; z-index: 10; }
+  .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 900; letter-spacing: -0.02em; color: var(--gold); }
+  .logo span { color: var(--text); font-weight: 400; }
+  .tagline { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+  nav { display: flex; gap: 8px; }
+  .nav-btn { padding: 8px 18px; border-radius: 40px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
+  .nav-btn.active, .nav-btn:hover { background: var(--gold); color: var(--dark); border-color: var(--gold); font-weight: 500; }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* HOME */
+  .hero { position: relative; z-index: 1; padding: 80px 40px 60px; text-align: center; }
+  .hero-eyebrow { font-size: 0.7rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--gold); margin-bottom: 20px; }
+  .hero h1 { font-family: 'Playfair Display', serif; font-size: clamp(2.5rem, 6vw, 5rem); font-weight: 900; line-height: 1.05; margin-bottom: 24px; }
+  .hero h1 em { font-style: italic; color: var(--gold); }
+  .hero p { max-width: 520px; margin: 0 auto 40px; color: var(--muted); font-size: 1.05rem; line-height: 1.7; }
+  .hero-cta { display: inline-flex; align-items: center; gap: 10px; background: var(--gold); color: var(--dark); padding: 16px 32px; border-radius: 50px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; font-family: 'DM Sans', sans-serif; transition: all 0.25s; }
+  .hero-cta:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 12px 40px rgba(201,168,76,0.3); }
+  .hero-features { display: flex; justify-content: center; gap: 40px; margin-top: 60px; flex-wrap: wrap; }
+  .feature-chip { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--muted); }
+  .feature-chip .dot { width: 6px; height: 6px; background: var(--gold); border-radius: 50%; }
+
+  /* TRY-ON */
+  .tryon-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 75px); position: relative; z-index: 1; }
+  .panel { padding: 36px; border-right: 1px solid var(--border); }
+  .panel:last-child { border-right: none; }
+  .panel-title { font-family: 'Playfair Display', serif; font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; }
+  .panel-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 28px; letter-spacing: 0.05em; }
+
+  .upload-zone { border: 1.5px dashed var(--border); border-radius: 16px; padding: 28px 20px; text-align: center; cursor: pointer; transition: all 0.25s; position: relative; background: var(--surface); min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .upload-zone:hover { border-color: var(--gold); background: rgba(201,168,76,0.04); }
+  .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 2rem; opacity: 0.5; }
+  .upload-zone p { color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+  .upload-zone strong { color: var(--gold); }
+
+  .clothing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }
+  .clothing-card { border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 8px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface); position: relative; }
+  .clothing-card:hover { border-color: var(--gold); background: var(--surface2); }
+  .clothing-card.selected { border-color: var(--gold); background: rgba(201,168,76,0.08); }
+  .clothing-card.selected::after { content: '✓'; position: absolute; top: 6px; right: 6px; background: var(--gold); color: var(--dark); width: 18px; height: 18px; border-radius: 50%; font-size: 0.65rem; display: flex; align-items: center; justify-content: center; font-weight: 700; line-height: 18px; }
+  .clothing-emoji { font-size: 2.2rem; margin-bottom: 6px; }
+  .clothing-name { font-size: 0.7rem; color: var(--muted); line-height: 1.3; }
+
+  .process-btn { width: 100%; padding: 16px; background: var(--gold); color: var(--dark); border: none; border-radius: 12px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.25s; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .process-btn:hover:not(:disabled) { background: var(--gold-light); transform: translateY(-1px); }
+  .process-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* PREVIEW AREA */
+  .preview-area { background: var(--surface); border-radius: 16px; min-height: 440px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+
+  .preview-placeholder { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; color: var(--muted); padding: 40px; }
+  .preview-placeholder .icon { font-size: 3rem; opacity: 0.35; }
+  .preview-placeholder p { font-size: 0.85rem; line-height: 1.6; }
+
+  .preview-loading { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 40px; width: 100%; height: 100%; position: absolute; inset: 0; background: var(--surface); z-index: 5; }
+  .spinner { width: 32px; height: 32px; border: 2.5px solid rgba(201,168,76,0.2); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-steps { display: flex; flex-direction: column; gap: 10px; }
+  .loading-step { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: var(--muted); opacity: 0.35; transition: opacity 0.3s, color 0.3s; }
+  .loading-step.active { opacity: 1; color: var(--gold); }
+  .loading-step.done { opacity: 0.6; color: var(--green); }
+
+  /* PHOTO + OVERLAY RESULT */
+  .preview-result { display: none; position: relative; width: 100%; height: 100%; }
+  .result-photo { width: 100%; max-height: 440px; object-fit: cover; object-position: top center; display: block; border-radius: 16px; }
+
+  /* Top-left badge */
+  .overlay-badge { position: absolute; top: 14px; left: 14px; background: rgba(14,12,10,0.82); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 40px; padding: 7px 14px 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: 500; }
+  .badge-emoji { font-size: 1.2rem; }
+
+  /* Top-right AI tag */
+  .overlay-ai-tag { position: absolute; top: 14px; right: 14px; background: rgba(76,175,121,0.15); border: 1px solid rgba(76,175,121,0.4); backdrop-filter: blur(8px); border-radius: 40px; padding: 6px 12px; font-size: 0.72rem; color: var(--green); display: flex; align-items: center; gap: 5px; }
+
+  /* Bottom gradient card */
+  .overlay-card { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(14,12,10,0.97) 55%, transparent); padding: 60px 20px 20px; border-radius: 0 0 16px 16px; }
+  .outfit-headline { font-family: 'Playfair Display', serif; font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  .emoji-big { font-size: 1.5rem; }
+  .ai-description { font-size: 0.8rem; line-height: 1.65; color: rgba(245,237,216,0.8); margin-bottom: 12px; }
+  .style-pills { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+  .style-pill { padding: 4px 11px; background: rgba(201,168,76,0.12); border: 1px solid rgba(201,168,76,0.25); color: var(--gold); border-radius: 20px; font-size: 0.7rem; }
+  .overlay-actions { display: flex; gap: 10px; }
+  .save-btn { flex: 1; padding: 11px; background: var(--gold); color: var(--dark); border: none; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .save-btn:hover { background: var(--gold-light); }
+  .retry-btn { padding: 11px 18px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; }
+  .retry-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+  @keyframes revealUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  .preview-result.visible { animation: revealUp 0.5s ease forwards; }
+
+  /* WARDROBE */
+  .wardrobe-page { padding: 40px; position: relative; z-index: 1; }
+  .wardrobe-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 36px; }
+  .wardrobe-header h2 { font-family: 'Playfair Display', serif; font-size: 2rem; font-weight: 700; }
+  .saved-count { font-size: 0.78rem; color: var(--muted); letter-spacing: 0.08em; }
+  .wardrobe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+  .wardrobe-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; animation: fadeUp 0.4s ease forwards; opacity: 0; }
+  .wardrobe-card:hover { transform: translateY(-4px); box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .wardrobe-photo-wrap { position: relative; height: 200px; overflow: hidden; background: var(--surface2); }
+  .wardrobe-photo { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  .wardrobe-photo-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 4rem; opacity: 0.3; }
+  .wardrobe-outfit-badge { position: absolute; bottom: 10px; left: 10px; background: rgba(14,12,10,0.85); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 30px; padding: 5px 12px 5px 8px; display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+  .wardrobe-card-body { padding: 16px 20px 20px; }
+  .wardrobe-card-body h4 { font-size: 0.95rem; font-weight: 500; margin-bottom: 6px; }
+  .wardrobe-card-body p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
+  .card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { padding: 4px 10px; background: rgba(201,168,76,0.1); border: 1px solid rgba(201,168,76,0.2); color: var(--gold); border-radius: 20px; font-size: 0.7rem; }
+  .empty-wardrobe { text-align: center; padding: 80px 40px; color: var(--muted); grid-column: 1/-1; }
+  .empty-wardrobe .icon { font-size: 4rem; margin-bottom: 20px; opacity: 0.3; }
+  .empty-wardrobe h3 { font-family: 'Playfair Display', serif; margin-bottom: 10px; color: var(--text); }
+
+  /* AUTH */
+  .auth-page { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 75px); padding: 40px; position: relative; z-index: 1; }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 48px 44px; width: 100%; max-width: 420px; }
+  .auth-card h2 { font-family: 'Playfair Display', serif; font-size: 1.8rem; margin-bottom: 6px; }
+  .auth-card .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 36px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 0.78rem; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase; }
+  .field input { width: 100%; padding: 13px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
+  .field input:focus { border-color: var(--gold); }
+  .auth-btn { width: 100%; padding: 15px; background: var(--gold); color: var(--dark); border: none; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; margin-top: 8px; transition: all 0.2s; }
+  .auth-btn:hover { background: var(--gold-light); }
+  .auth-switch { text-align: center; margin-top: 20px; font-size: 0.82rem; color: var(--muted); }
+  .auth-switch a { color: var(--gold); cursor: pointer; }
+  .user-bar { display: flex; align-items: center; gap: 10px; }
+  .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; color: var(--dark); }
+  .user-name { font-size: 0.82rem; }
+  .logout-btn { padding: 6px 14px; border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 20px; font-size: 0.75rem; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+  .logout-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* SELLER */
+  .seller-page { padding: 40px; position: relative; z-index: 1; max-width: 960px; margin: 0 auto; }
+  .seller-header { margin-bottom: 32px; }
+  .seller-header h2 { font-family: 'Playfair Display', serif; font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+  .seller-header p { color: var(--muted); font-size: 0.88rem; }
+  .seller-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .seller-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+  .seller-card h3 { font-family: 'Playfair Display', serif; font-size: 1.1rem; margin-bottom: 4px; }
+  .seller-card .sub { font-size: 0.75rem; color: var(--muted); margin-bottom: 20px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .seller-upload-zone { border: 1.5px dashed var(--border); border-radius: 12px; padding: 24px 16px; text-align: center; cursor: pointer; transition: all 0.25s; position: relative; background: var(--surface2); min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; margin-bottom: 16px; }
+  .seller-upload-zone:hover { border-color: var(--gold); }
+  .seller-upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .seller-upload-zone p { font-size: 0.78rem; color: var(--muted); }
+  .seller-upload-zone strong { color: var(--gold); }
+  .seller-field { margin-bottom: 13px; }
+  .seller-field label { display: block; font-size: 0.73rem; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 6px; text-transform: uppercase; }
+  .seller-field input, .seller-field select { width: 100%; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.85rem; outline: none; transition: border-color 0.2s; }
+  .seller-field input:focus, .seller-field select:focus { border-color: var(--gold); }
+  .seller-field select option { background: var(--dark); }
+  .seller-submit { width: 100%; padding: 13px; background: var(--gold); color: var(--dark); border: none; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 4px; }
+  .seller-submit:hover { background: var(--gold-light); }
+  .seller-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+  .stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .stat-num { font-family: 'Playfair Display', serif; font-size: 1.6rem; color: var(--gold); font-weight: 700; }
+  .stat-label { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+  .seller-listings { display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; }
+  .listing-item { display: flex; align-items: center; gap: 14px; padding: 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; transition: border-color 0.2s; }
+  .listing-item:hover { border-color: var(--gold); }
+  .listing-emoji { font-size: 1.8rem; flex-shrink: 0; }
+  .listing-info { flex: 1; }
+  .listing-info h4 { font-size: 0.88rem; font-weight: 500; margin-bottom: 2px; }
+  .listing-info p { font-size: 0.73rem; color: var(--muted); }
+  .listing-badge { padding: 3px 9px; background: rgba(76,175,121,0.12); border: 1px solid rgba(76,175,121,0.3); color: var(--green); border-radius: 20px; font-size: 0.68rem; }
+  .listing-delete { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 4px; transition: color 0.2s; }
+  .listing-delete:hover { color: var(--red); }
+  .empty-listings { text-align: center; padding: 36px 20px; color: var(--muted); }
+  .empty-listings .icon { font-size: 2.5rem; opacity: 0.3; margin-bottom: 10px; }
+  .empty-listings p { font-size: 0.8rem; }
+
+  .toast { position: fixed; bottom: 30px; right: 30px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px; font-size: 0.85rem; color: var(--text); z-index: 1000; transform: translateY(80px); opacity: 0; transition: all 0.3s ease; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-color: rgba(76,175,121,0.4); }
+  .toast.error { border-color: rgba(224,90,74,0.4); }
+
+  @media (max-width: 768px) {
+    header { padding: 16px 20px; }
+    .hero { padding: 50px 20px 40px; }
+    .tryon-layout { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--border); }
+    .wardrobe-page { padding: 24px; }
+    .clothing-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<header>
+  <div>
+    <div class="logo">Afri<span>Style</span></div>
+    <div class="tagline">Virtual Try-On Platform</div>
+  </div>
+  <nav>
+    <button class="nav-btn" onclick="showPage('home')">Home</button>
+    <button class="nav-btn" onclick="showPage('tryon')">Try-On</button>
+    <button class="nav-btn" onclick="showPage('wardrobe')">My Wardrobe</button>
+    <button class="nav-btn" onclick="showPage('seller')">Seller</button>
+    <button class="nav-btn active" id="authNavBtn" onclick="showPage('auth')">Login</button>
+  </nav>
+  <div class="user-bar" id="userBar" style="display:none">
+    <div class="user-avatar" id="userAvatar"></div>
+    <span class="user-name" id="userNameDisplay"></span>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="hero">
+    <div class="hero-eyebrow">✦ Powered by AI · Made for Africa</div>
+    <h1>See how clothes<br>look on <em>you</em>,<br>before you buy</h1>
+    <p>Upload your photo, choose an outfit, and get an instant AI-powered virtual try-on preview. Built for African youth and informal fashion sellers.</p>
+    <button class="hero-cta" onclick="showPage('tryon')"><span>🪞</span> Start Try-On</button>
+    <div class="hero-features">
+      <div class="feature-chip"><div class="dot"></div> Upload your photo</div>
+      <div class="feature-chip"><div class="dot"></div> Select any outfit</div>
+      <div class="feature-chip"><div class="dot"></div> AI-powered preview</div>
+      <div class="feature-chip"><div class="dot"></div> Save your looks</div>
+    </div>
+  </div>
+</div>
+
+<!-- TRY-ON -->
+<div class="page" id="page-tryon">
+  <div class="tryon-layout">
+    <div class="panel">
+      <div class="panel-title">Your Photo</div>
+      <div class="panel-sub">STEP 1 — UPLOAD AN IMAGE</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept="image/*" onchange="handleUpload(event)" />
+        <div class="upload-icon">📸</div>
+        <p><strong>Click to upload</strong> or drag &amp; drop<br>PNG or JPG of yourself</p>
+      </div>
+
+      <div style="height:32px"></div>
+
+      <div class="panel-title">Choose Outfit</div>
+      <div class="panel-sub">STEP 2 — SELECT CLOTHING ITEM</div>
+      <div class="clothing-grid" id="clothingGrid"></div>
+      <button class="process-btn" id="processBtn" onclick="processTryOn()" disabled>
+        <span>✨</span> Generate Try-On Preview
+      </button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Your Look</div>
+      <div class="panel-sub">STEP 3 — PREVIEW</div>
+      <div class="preview-area" id="previewArea">
+
+        <div class="preview-placeholder" id="previewPlaceholder">
+          <div class="icon">🪞</div>
+          <p>Upload a photo and select<br>an outfit to see your look</p>
+        </div>
+
+        <div class="preview-loading" id="previewLoading">
+          <div class="spinner"></div>
+          <div class="loading-steps">
+            <div class="loading-step" id="step1">📸 Reading your photo...</div>
+            <div class="loading-step" id="step2">👗 Matching outfit style...</div>
+            <div class="loading-step" id="step3">🤖 AI generating preview...</div>
+            <div class="loading-step" id="step4">✨ Finalising your look...</div>
+          </div>
+        </div>
+
+        <div class="preview-result" id="previewResult">
+          <img class="result-photo" id="resultPhoto" src="" alt="Your photo" />
+          <div class="overlay-badge">
+            <span class="badge-emoji" id="badgeEmoji"></span>
+            <span id="badgeName"></span>
+          </div>
+          <div class="overlay-ai-tag"><span>✦</span> AI Try-On</div>
+          <div class="overlay-card">
+            <div class="outfit-headline">
+              <span class="emoji-big" id="headlineEmoji"></span>
+              <span id="headlineName"></span>
+            </div>
+            <div class="ai-description" id="aiDescription"></div>
+            <div class="style-pills" id="stylePills"></div>
+            <div class="overlay-actions">
+              <button class="save-btn" onclick="saveOutfit()">💾 Save to Wardrobe</button>
+              <button class="retry-btn" onclick="resetPreview()">↩ Try Another</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WARDROBE -->
+<div class="page" id="page-wardrobe">
+  <div class="wardrobe-page">
+    <div class="wardrobe-header">
+      <div>
+        <h2>My Wardrobe</h2>
+        <div class="saved-count" id="savedCount">0 saved looks</div>
+      </div>
+    </div>
+    <div class="wardrobe-grid" id="wardrobeGrid"></div>
+  </div>
+</div>
+
+<!-- AUTH -->
+<div class="page" id="page-auth">
+  <div class="auth-page">
+    <div class="auth-card" id="loginCard">
+      <h2>Welcome back</h2>
+      <div class="sub">Log in to save your looks and access your wardrobe.</div>
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com" /></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPassword" placeholder="••••••••" /></div>
+      <button class="auth-btn" onclick="login()">Log In</button>
+      <div class="auth-switch">No account? <a onclick="toggleAuth()">Create one free →</a></div>
+    </div>
+    <div class="auth-card" id="registerCard" style="display:none">
+      <h2>Create account</h2>
+      <div class="sub">Join thousands of African fashion lovers.</div>
+      <div class="field"><label>Full Name</label><input type="text" id="regName" placeholder="Your name" /></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com" /></div>
+      <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="Min 6 characters" /></div>
+      <button class="auth-btn" onclick="register()">Create Account</button>
+      <div class="auth-switch">Already have one? <a onclick="toggleAuth()">Log in →</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- SELLER -->
+<div class="page" id="page-seller">
+  <div class="seller-page">
+    <div class="seller-header">
+      <h2>Seller Dashboard</h2>
+      <p>Upload your clothing items so buyers can try them on virtually.</p>
+    </div>
+    <div class="seller-grid">
+
+      <!-- Left: Upload new item -->
+      <div class="seller-card">
+        <h3>Upload Clothing Item</h3>
+        <div class="sub">ADD NEW LISTING</div>
+        <div class="seller-upload-zone" id="sellerUploadZone">
+          <input type="file" accept="image/*" onchange="handleSellerUpload(event)" />
+          <div style="font-size:1.8rem; opacity:0.5">👗</div>
+          <p><strong>Click to upload</strong> garment photo<br>Flat-lay or product image</p>
+        </div>
+        <div class="seller-field">
+          <label>Item Name</label>
+          <input type="text" id="sellerItemName" placeholder="e.g. Ankara Wrap Dress" />
+        </div>
+        <div class="seller-field">
+          <label>Category</label>
+          <select id="sellerCategory">
+            <option value="">Select category</option>
+            <option>Dress</option>
+            <option>Top</option>
+            <option>Jacket</option>
+            <option>Skirt</option>
+            <option>Trousers</option>
+            <option>Accessories</option>
+          </select>
+        </div>
+        <div class="seller-field">
+          <label>Price (FCFA)</label>
+          <input type="number" id="sellerPrice" placeholder="e.g. 15000" />
+        </div>
+        <div class="seller-field">
+          <label>Description</label>
+          <input type="text" id="sellerDesc" placeholder="Short description of the item" />
+        </div>
+        <button class="seller-submit" onclick="uploadListing()">📤 Upload Item</button>
+      </div>
+
+      <!-- Right: My listings -->
+      <div class="seller-card">
+        <h3>My Listings</h3>
+        <div class="sub">UPLOADED ITEMS</div>
+        <div class="seller-stats">
+          <div class="stat-box">
+            <div class="stat-num" id="statTotal">0</div>
+            <div class="stat-label">Total items</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="statActive">0</div>
+            <div class="stat-label">Active</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="statTryOns">0</div>
+            <div class="stat-label">Try-ons</div>
+          </div>
+        </div>
+        <div class="seller-listings" id="sellerListings"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+let currentUser = JSON.parse(localStorage.getItem('afristyle_user') || 'null');
+let savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]');
+let selectedClothing = null;
+let uploadedImageSrc = null;
+let lastResult = null;
+
+const clothingItems = [
+  { id:1, emoji:'👗', name:'Ankara Dress',  style:'Traditional Ankara print wrap dress', tags:['african','dress','traditional'] },
+  { id:2, emoji:'🧥', name:'Kente Jacket',  style:'Bold Kente-patterned blazer',          tags:['african','jacket','kente'] },
+  { id:3, emoji:'👕', name:'Dashiki Top',   style:'Vibrant Dashiki embroidered shirt',    tags:['african','casual','top'] },
+  { id:4, emoji:'👖', name:'Slim Chinos',   style:'Modern slim-fit chino trousers',       tags:['casual','pants','modern'] },
+  { id:5, emoji:'🥻', name:'Kaba Dress',    style:'Elegant Ghanaian Kaba & Slit dress',  tags:['african','dress','formal'] },
+  { id:6, emoji:'🧣', name:'Kitenge Wrap',  style:'Colourful Kitenge wraparound skirt',  tags:['african','skirt','kitenge'] },
+];
+
+function init() {
+  document.getElementById('clothingGrid').innerHTML = clothingItems.map(c => `
+    <div class="clothing-card" id="cloth-${c.id}" onclick="selectClothing(${c.id})">
+      <div class="clothing-emoji">${c.emoji}</div>
+      <div class="clothing-name">${c.name}</div>
+    </div>`).join('');
+  updateAuthUI();
+  renderWardrobe();
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    if (b.textContent.toLowerCase().includes(name) || (name==='auth' && b.textContent==='Login')) b.classList.add('active');
+  });
+  if (name === 'wardrobe') renderWardrobe();
+  if (name === 'seller') renderSellerListings();
+}
+
+function handleUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedImageSrc = ev.target.result;
+    const zone = document.getElementById('uploadZone');
+    zone.innerHTML = `
+      <input type="file" accept="image/*" onchange="handleUpload(event)" />
+      <img src="${uploadedImageSrc}" style="max-height:110px;border-radius:10px;object-fit:cover;" />
+      <p style="font-size:0.75rem;color:var(--green);">✓ Photo ready · click to change</p>`;
+    updateProcessBtn();
+    showToast('📸 Photo uploaded!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function selectClothing(id) {
+  selectedClothing = clothingItems.find(c => c.id === id);
+  document.querySelectorAll('.clothing-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('cloth-' + id).classList.add('selected');
+  updateProcessBtn();
+}
+
+function updateProcessBtn() {
+  document.getElementById('processBtn').disabled = !(uploadedImageSrc && selectedClothing);
+}
+
+async function processTryOn() {
+  if (!uploadedImageSrc || !selectedClothing) return;
+
+  document.getElementById('previewPlaceholder').style.display = 'none';
+  document.getElementById('previewResult').style.display = 'none';
+  const loading = document.getElementById('previewLoading');
+  loading.style.display = 'flex';
+
+  const steps = ['step1','step2','step3','step4'];
+  steps.forEach(s => { document.getElementById(s).className = 'loading-step'; });
+  for (let i = 0; i < steps.length; i++) {
+    await delay(750);
+    if (i > 0) document.getElementById(steps[i-1]).className = 'loading-step done';
+    document.getElementById(steps[i]).className = 'loading-step active';
+  }
+
+  try {
+    const prompt = `You are a fashion AI for AfriStyle, a virtual try-on platform for African youth.
+
+The user is trying on: "${selectedClothing.name}" — ${selectedClothing.style}.
+
+Return ONLY a raw JSON object (no markdown, no backticks):
+{
+  "headline": "punchy headline, max 6 words, e.g. 'Elegance meets African tradition'",
+  "description": "2-3 sentences: how this outfit looks on the user, fit, cultural feel, style impression",
+  "tip": "one short styling tip for this specific garment",
+  "occasion": "Best for: [specific occasion]",
+  "vibe": ["word1", "word2", "word3"]
+}`;
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    const data = await resp.json();
+    let raw = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
+    const result = JSON.parse(raw);
+
+    document.getElementById(steps[3]).className = 'loading-step done';
+    await delay(300);
+
+    // Populate overlay
+    document.getElementById('resultPhoto').src = uploadedImageSrc;
+    document.getElementById('badgeEmoji').textContent = selectedClothing.emoji;
+    document.getElementById('badgeName').textContent = selectedClothing.name;
+    document.getElementById('headlineEmoji').textContent = selectedClothing.emoji;
+    document.getElementById('headlineName').textContent = result.headline || selectedClothing.name;
+    document.getElementById('aiDescription').textContent =
+      [result.description, result.tip, result.occasion].filter(Boolean).join(' ');
+    document.getElementById('stylePills').innerHTML =
+      (result.vibe || selectedClothing.tags).map(v => `<span class="style-pill">${v}</span>`).join('');
+
+    loading.style.display = 'none';
+    const el = document.getElementById('previewResult');
+    el.style.display = 'block';
+    void el.offsetWidth; // reflow for animation
+    el.classList.add('visible');
+
+    lastResult = {
+      clothing: selectedClothing,
+      imageSrc: uploadedImageSrc,
+      headline: result.headline,
+      description: result.description,
+      tip: result.tip,
+      occasion: result.occasion,
+      vibe: result.vibe,
+      date: new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+    };
+
+    showToast('✨ Looking amazing!', 'success');
+
+  } catch (err) {
+    loading.style.display = 'none';
+    document.getElementById('previewPlaceholder').style.display = 'flex';
+    showToast('❌ Error generating preview', 'error');
+    console.error(err);
+  }
+}
+
+function resetPreview() {
+  const el = document.getElementById('previewResult');
+  el.style.display = 'none';
+  el.classList.remove('visible');
+  document.getElementById('previewPlaceholder').style.display = 'flex';
+}
+
+function saveOutfit() {
+  if (!lastResult) return;
+  if (!currentUser) { showToast('🔐 Log in to save outfits', 'error'); showPage('auth'); return; }
+  if (savedOutfits.find(o => o.clothing.id === lastResult.clothing.id && o.date === lastResult.date)) {
+    showToast('Already saved!', 'success'); return;
+  }
+  savedOutfits.unshift({ ...lastResult, id: Date.now() });
+  localStorage.setItem('afristyle_wardrobe', JSON.stringify(savedOutfits));
+  showToast('💾 Saved to wardrobe!', 'success');
+}
+
+function renderWardrobe() {
+  savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]');
+  const grid = document.getElementById('wardrobeGrid');
+  document.getElementById('savedCount').textContent = savedOutfits.length + ' saved look' + (savedOutfits.length !== 1 ? 's' : '');
+  if (!savedOutfits.length) {
+    grid.innerHTML = `<div class="empty-wardrobe"><div class="icon">🧺</div><h3>Your wardrobe is empty</h3><p>Complete a try-on and save your favourite looks here.</p></div>`;
+    return;
+  }
+  grid.innerHTML = savedOutfits.map((o, i) => `
+    <div class="wardrobe-card" style="animation-delay:${i*0.07}s">
+      <div class="wardrobe-photo-wrap">
+        ${o.imageSrc ? `<img class="wardrobe-photo" src="${o.imageSrc}" />` : `<div class="wardrobe-photo-placeholder">${o.clothing.emoji}</div>`}
+        <div class="wardrobe-outfit-badge"><span>${o.clothing.emoji}</span><span>${o.clothing.name}</span></div>
+      </div>
+      <div class="wardrobe-card-body">
+        <h4>${o.headline || o.clothing.name}</h4>
+        <p>${o.description || ''}</p>
+        <div class="card-tags">${(o.vibe || o.clothing.tags || []).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+      </div>
+    </div>`).join('');
+}
+
+function login() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPassword').value;
+  if (!email || !pass) { showToast('Please fill all fields', 'error'); return; }
+  const users = JSON.parse(localStorage.getItem('afristyle_users') || '[]');
+  const user = users.find(u => u.email === email && u.password === pass);
+  if (!user) { showToast('Invalid credentials', 'error'); return; }
+  currentUser = user;
+  localStorage.setItem('afristyle_user', JSON.stringify(user));
+  updateAuthUI(); showPage('home');
+  showToast('👋 Welcome back, ' + user.name + '!', 'success');
+}
+
+function register() {
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const pass = document.getElementById('regPassword').value;
+  if (!name || !email || !pass) { showToast('Please fill all fields', 'error'); return; }
+  if (pass.length < 6) { showToast('Password must be 6+ characters', 'error'); return; }
+  const users = JSON.parse(localStorage.getItem('afristyle_users') || '[]');
+  if (users.find(u => u.email === email)) { showToast('Email already registered', 'error'); return; }
+  const user = { name, email, password: pass };
+  users.push(user);
+  localStorage.setItem('afristyle_users', JSON.stringify(users));
+  currentUser = user;
+  localStorage.setItem('afristyle_user', JSON.stringify(user));
+  updateAuthUI(); showPage('home');
+  showToast('🎉 Welcome, ' + name + '!', 'success');
+}
+
+function logout() {
+  currentUser = null;
+  localStorage.removeItem('afristyle_user');
+  updateAuthUI();
+  showToast('Logged out', 'success');
+}
+
+function updateAuthUI() {
+  if (currentUser) {
+    document.getElementById('authNavBtn').style.display = 'none';
+    document.getElementById('userBar').style.display = 'flex';
+    document.getElementById('userAvatar').textContent = currentUser.name.charAt(0).toUpperCase();
+    document.getElementById('userNameDisplay').textContent = currentUser.name;
+  } else {
+    document.getElementById('authNavBtn').style.display = 'block';
+    document.getElementById('userBar').style.display = 'none';
+  }
+}
+
+function toggleAuth() {
+  const l = document.getElementById('loginCard');
+  const r = document.getElementById('registerCard');
+  l.style.display = l.style.display === 'none' ? 'block' : 'none';
+  r.style.display = r.style.display === 'none' ? 'block' : 'none';
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ==================== SELLER ====================
+let sellerImageSrc = null;
+
+const categoryEmojis = {
+  'Dress':'👗', 'Top':'👕', 'Jacket':'🧥', 'Skirt':'🥻', 'Trousers':'👖', 'Accessories':'🧣'
+};
+
+function handleSellerUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    sellerImageSrc = ev.target.result;
+    const zone = document.getElementById('sellerUploadZone');
+    zone.innerHTML = `
+      <input type="file" accept="image/*" onchange="handleSellerUpload(event)" />
+      <img src="${sellerImageSrc}" style="max-height:90px;border-radius:8px;object-fit:cover;" />
+      <p style="font-size:0.75rem;color:var(--green);">✓ Image ready</p>`;
+    showToast('👗 Garment photo uploaded!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function uploadListing() {
+  if (!currentUser) { showToast('🔐 Log in to upload items', 'error'); showPage('auth'); return; }
+  const name = document.getElementById('sellerItemName').value.trim();
+  const category = document.getElementById('sellerCategory').value;
+  const price = document.getElementById('sellerPrice').value.trim();
+  const desc = document.getElementById('sellerDesc').value.trim();
+  if (!name || !category) { showToast('Please fill item name and category', 'error'); return; }
+
+  const listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
+  const item = {
+    id: Date.now(),
+    name, category, price, desc,
+    emoji: categoryEmojis[category] || '👗',
+    imageSrc: sellerImageSrc,
+    seller: currentUser.name,
+    date: new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }),
+    tryOns: 0,
+    active: true
+  };
+  listings.unshift(item);
+  localStorage.setItem('afristyle_listings', JSON.stringify(listings));
+
+  // Reset form
+  document.getElementById('sellerItemName').value = '';
+  document.getElementById('sellerCategory').value = '';
+  document.getElementById('sellerPrice').value = '';
+  document.getElementById('sellerDesc').value = '';
+  sellerImageSrc = null;
+  document.getElementById('sellerUploadZone').innerHTML = `
+    <input type="file" accept="image/*" onchange="handleSellerUpload(event)" />
+    <div style="font-size:1.8rem;opacity:0.5">👗</div>
+    <p><strong>Click to upload</strong> garment photo<br>Flat-lay or product image</p>`;
+
+  renderSellerListings();
+  showToast('✅ Item listed successfully!', 'success');
+}
+
+function deleteListing(id) {
+  let listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
+  listings = listings.filter(l => l.id !== id);
+  localStorage.setItem('afristyle_listings', JSON.stringify(listings));
+  renderSellerListings();
+  showToast('Item removed', 'success');
+}
+
+function renderSellerListings() {
+  const listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
+  const myListings = currentUser ? listings.filter(l => l.seller === currentUser.name) : [];
+  const el = document.getElementById('sellerListings');
+
+  document.getElementById('statTotal').textContent = myListings.length;
+  document.getElementById('statActive').textContent = myListings.filter(l => l.active).length;
+  document.getElementById('statTryOns').textContent = myListings.reduce((s, l) => s + (l.tryOns || 0), 0);
+
+  if (!myListings.length) {
+    el.innerHTML = `<div class="empty-listings"><div class="icon">📦</div><p>No items yet. Upload your first clothing item!</p></div>`;
+    return;
+  }
+  el.innerHTML = myListings.map(l => `
+    <div class="listing-item">
+      <div class="listing-emoji">${l.emoji}</div>
+      <div class="listing-info">
+        <h4>${l.name}</h4>
+        <p>${l.category}${l.price ? ' · ' + Number(l.price).toLocaleString() + ' FCFA' : ''} · ${l.date}</p>
+      </div>
+      <span class="listing-badge">Active</span>
+      <button class="listing-delete" onclick="deleteListing(${l.id})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+init();
+
+</script>
+</body>
+</html>
