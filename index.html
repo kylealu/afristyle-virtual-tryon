@@ -429,7 +429,7 @@ let savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]'
 let selectedClothing = null;
 let uploadedImageSrc = null;
 let lastTryOnTime = 0;
-const TRYON_COOLDOWN_MS = 3000; // 3 second cooldown between requests
+const TRYON_COOLDOWN_MS = 5000; // 5 second cooldown between requests to avoid rate limits
 let lastResult = null;
 
 const clothingItems = [
@@ -520,21 +520,30 @@ async function processTryOn() {
   }
 
   try {
+    // Set a 90-second timeout for the entire request (accounting for backend retries)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
+    
     const resp = await fetch(`${API_BASE_URL}/tryon`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`
       },
+      signal: controller.signal,
       body: JSON.stringify({
         clothing: selectedClothing.name,
         style: selectedClothing.style
       })
     });
+    
+    clearTimeout(timeoutId);
 
     if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.message || 'API error');
+      const errData = await resp.json();
+      const error = new Error(errData.message || 'API error');
+      error.status = resp.status;
+      throw error;
     }
 
     const result = await resp.json();
@@ -578,8 +587,17 @@ async function processTryOn() {
     loading.style.display = 'none';
     document.getElementById('previewPlaceholder').style.display = 'flex';
     processBtn.disabled = false;
-    showToast('❌ ' + (err.message || 'Error generating preview'), 'error');
-    console.error(err);
+    
+    // Handle different error types with specific messages
+    let message = err.message || 'Error generating preview';
+    if (err.name === 'AbortError') {
+      message = '⏱️ Request timed out. The AI service took too long to respond. Please try again.';
+    } else if (err.status === 429) {
+      message = '⏳ API rate limit exceeded. Please wait a few minutes and try again. Your OpenAI account may have exceeded monthly usage limits.';
+    }
+    
+    showToast('❌ ' + message, 'error');
+    console.error('Try-on error:', err);
   }
 }
 

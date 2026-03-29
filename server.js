@@ -36,12 +36,20 @@ async function callOpenAIWithRetry(promiseFunc, maxRetries = 3) {
     try {
       return await promiseFunc();
     } catch (err) {
-      const isRateLimit = err.status === 429 || err.message?.includes('429');
+      // Check multiple error properties for rate limit detection
+      const isRateLimit = 
+        err.status === 429 || 
+        err.code === 'rate_limit_exceeded' ||
+        err.error?.code === 'rate_limit_exceeded' ||
+        err.message?.includes('429') ||
+        err.message?.includes('rate_limit') ||
+        err.message?.includes('rate limit');
+      
       const isLastAttempt = attempt === maxRetries - 1;
       
       if (isRateLimit && !isLastAttempt) {
-        const delayMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-        console.log(`Rate limited. Retrying in ${delayMs}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        const delayMs = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s, 16s, 32s
+        console.log(`⏳ Rate limited on attempt ${attempt + 1}. Waiting ${delayMs}ms before retry...`);
         await new Promise(r => setTimeout(r, delayMs));
         continue;
       }
@@ -136,7 +144,8 @@ Return ONLY JSON object with keys: headline, description, tip, occasion, vibe (a
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 220,
         temperature: 0.8
-      })
+      }),
+      5  // Increase retries to 5 attempts
     );
 
     let raw = completion.choices?.[0]?.message?.content || '{}';
@@ -151,18 +160,36 @@ Return ONLY JSON object with keys: headline, description, tip, occasion, vibe (a
 
     res.json(json);
   } catch (err) {
-    console.error('OpenAI error:', err.message || err);
+    console.error('🔴 OpenAI error:', {
+      status: err.status,
+      code: err.code,
+      message: err.message,
+      error: err.error
+    });
+    
     const errorMsg = err.message || 'Unknown error';
-    if (errorMsg.includes('401') || errorMsg.includes('authentication')) {
+    
+    // Rate limit detection
+    if (err.status === 429 || 
+        err.code === 'rate_limit_exceeded' ||
+        err.error?.code === 'rate_limit_exceeded' ||
+        errorMsg.includes('rate_limit') ||
+        errorMsg.includes('rate limit') ||
+        errorMsg.includes('429')) {
+      return res.status(429).json({ 
+        message: 'OpenAI rate limit exceeded. Your account may have exceeded the API limit. Please try again in a few minutes or check your OpenAI account usage.' 
+      });
+    }
+    
+    if (err.status === 401 || errorMsg.includes('authentication') || errorMsg.includes('401')) {
       return res.status(401).json({ message: 'OpenAI authentication failed - invalid API key' });
     }
-    if (errorMsg.includes('429') || err.status === 429) {
-      return res.status(429).json({ message: 'OpenAI rate limit exceeded. Please wait a moment and try again.' });
-    }
+    
     if (errorMsg.includes('timeout')) {
       return res.status(504).json({ message: 'OpenAI request timed out' });
     }
-    res.status(500).json({ message: 'OpenAI request failed: ' + errorMsg });
+    
+    res.status(500).json({ message: 'OpenAI error: ' + errorMsg });
   }
 });
 
