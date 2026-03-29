@@ -428,6 +428,8 @@ let authToken = localStorage.getItem('afristyle_token');
 let savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]');
 let selectedClothing = null;
 let uploadedImageSrc = null;
+let lastTryOnTime = 0;
+const TRYON_COOLDOWN_MS = 3000; // 3 second cooldown between requests
 let lastResult = null;
 
 const clothingItems = [
@@ -492,6 +494,18 @@ async function processTryOn() {
   if (!uploadedImageSrc || !selectedClothing) return;
   if (!authToken) { showToast('Please login first', 'error'); return; }
 
+  // Rate limit check
+  const now = Date.now();
+  if (now - lastTryOnTime < TRYON_COOLDOWN_MS) {
+    const waitMs = TRYON_COOLDOWN_MS - (now - lastTryOnTime);
+    showToast(`⏳ Please wait ${Math.ceil(waitMs / 1000)}s before trying again`, 'error');
+    return;
+  }
+  lastTryOnTime = now;
+
+  const processBtn = document.getElementById('processBtn');
+  processBtn.disabled = true;
+
   document.getElementById('previewPlaceholder').style.display = 'none';
   document.getElementById('previewResult').style.display = 'none';
   const loading = document.getElementById('previewLoading');
@@ -545,6 +559,8 @@ async function processTryOn() {
     void el.offsetWidth; // reflow for animation
     el.classList.add('visible');
 
+    processBtn.disabled = false;
+
     lastResult = {
       clothing: selectedClothing,
       imageSrc: uploadedImageSrc,
@@ -561,6 +577,7 @@ async function processTryOn() {
   } catch (err) {
     loading.style.display = 'none';
     document.getElementById('previewPlaceholder').style.display = 'flex';
+    processBtn.disabled = false;
     showToast('❌ ' + (err.message || 'Error generating preview'), 'error');
     console.error(err);
   }

@@ -30,6 +30,26 @@ if (!process.env.OPENAI_API_KEY) {
 }
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Retry logic with exponential backoff for rate limits
+async function callOpenAIWithRetry(promiseFunc, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await promiseFunc();
+    } catch (err) {
+      const isRateLimit = err.status === 429 || err.message?.includes('429');
+      const isLastAttempt = attempt === maxRetries - 1;
+      
+      if (isRateLimit && !isLastAttempt) {
+        const delayMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.log(`Rate limited. Retrying in ${delayMs}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 function readJson(storageFile, defaultVal) {
   try {
     if (!fs.existsSync(storageFile)) return defaultVal;
@@ -110,12 +130,14 @@ app.post('/api/tryon', authMiddleware, async (req, res) => {
 User's selection: ${clothing} - ${style}.
 Return ONLY JSON object with keys: headline, description, tip, occasion, vibe (array).`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 220,
-      temperature: 0.8
-    });
+    const completion = await callOpenAIWithRetry(() => 
+      openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 220,
+        temperature: 0.8
+      })
+    );
 
     let raw = completion.choices?.[0]?.message?.content || '{}';
     raw = raw.replace(/```json|```/g, '').trim();
@@ -134,8 +156,8 @@ Return ONLY JSON object with keys: headline, description, tip, occasion, vibe (a
     if (errorMsg.includes('401') || errorMsg.includes('authentication')) {
       return res.status(401).json({ message: 'OpenAI authentication failed - invalid API key' });
     }
-    if (errorMsg.includes('429')) {
-      return res.status(429).json({ message: 'OpenAI rate limit exceeded' });
+    if (errorMsg.includes('429') || err.status === 429) {
+      return res.status(429).json({ message: 'OpenAI rate limit exceeded. Please wait a moment and try again.' });
     }
     if (errorMsg.includes('timeout')) {
       return res.status(504).json({ message: 'OpenAI request timed out' });
