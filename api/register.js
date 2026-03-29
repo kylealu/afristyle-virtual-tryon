@@ -1,11 +1,33 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { readJson, writeJson, sendJson, sendError, USERS_FILE, JWT_SECRET } from './_helpers.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const USERS_FILE = path.join(__dirname, '../data/users.json');
+const JWT_SECRET = process.env.JWT_SECRET || 'afristyle_jwt_secret';
+
+function readJson(file, def) {
+  try {
+    if (!fs.existsSync(file)) return def;
+    return JSON.parse(fs.readFileSync(file, 'utf-8') || 'null') || def;
+  } catch (e) {
+    return def;
+  }
+}
+
+function writeJson(file, data) {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -13,23 +35,27 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return sendError(res, 'Method not allowed', 405);
+    res.status(405).json({ message: 'Method not allowed' });
+    return;
   }
 
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
-    return sendError(res, 'name, email, password required', 400);
+    res.status(400).json({ message: 'name, email, password required' });
+    return;
   }
 
   if (password.length < 6) {
-    return sendError(res, 'Password must be 6+ characters', 400);
+    res.status(400).json({ message: 'Password must be 6+ characters' });
+    return;
   }
 
   try {
     const users = readJson(USERS_FILE, []);
     if (users.find(u => u.email === email)) {
-      return sendError(res, 'Email already registered', 400);
+      res.status(400).json({ message: 'Email already registered' });
+      return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -39,9 +65,9 @@ export default async function handler(req, res) {
 
     const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
-    return sendJson(res, { user: { id: user.id, name: user.name, email: user.email }, token }, 201);
+    res.status(201).json({ user: { id: user.id, name: user.name, email: user.email }, token });
   } catch (err) {
     console.error('Register error:', err);
-    return sendError(res, 'Internal server error', 500);
+    res.status(500).json({ message: 'Internal server error' });
   }
 }
