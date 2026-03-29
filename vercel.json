@@ -1,11 +1,18 @@
 {
   "version": 2,
-  "buildCommand": "echo 'Build skipped'",
-  "public": true,
+  "buildCommand": "echo 'No build needed'",
+  "outputDirectory": ".",
+  "public": false,
+  "functions": {
+    "api/**": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/"
+      "destination": "/index.html"
     }
   ]
 }
