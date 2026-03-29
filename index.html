@@ -423,13 +423,15 @@
 
 <script>
 const API_BASE_URL = '/api';
-let currentUser = JSON.parse(localStorage.getItem('afristyle_user') || 'null');
-let authToken = localStorage.getItem('afristyle_token');
-let savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]');
+
+// Initialize variables safely
+let currentUser = null;
+let authToken = null;
+let savedOutfits = [];
 let selectedClothing = null;
 let uploadedImageSrc = null;
 let lastTryOnTime = 0;
-const TRYON_COOLDOWN_MS = 5000; // 5 second cooldown between requests to avoid rate limits
+const TRYON_COOLDOWN_MS = 5000;
 let lastResult = null;
 
 const clothingItems = [
@@ -441,7 +443,26 @@ const clothingItems = [
   { id:6, emoji:'🧣', name:'Kitenge Wrap',  style:'Colourful Kitenge wraparound skirt',  tags:['african','skirt','kitenge'] },
 ];
 
+function loadStorageData() {
+  try {
+    const user = localStorage.getItem('afristyle_user');
+    if (user) currentUser = JSON.parse(user);
+  } catch (e) { console.error('Error loading user:', e); }
+  
+  try {
+    authToken = localStorage.getItem('afristyle_token') || null;
+  } catch (e) { console.error('Error loading token:', e); }
+  
+  try {
+    const outfits = localStorage.getItem('afristyle_wardrobe');
+    if (outfits) savedOutfits = JSON.parse(outfits);
+  } catch (e) { console.error('Error loading outfits:', e); }
+}
+
 function init() {
+  if (!currentUser) {
+    loadStorageData();
+  }
   document.getElementById('clothingGrid').innerHTML = clothingItems.map(c => `
     <div class="clothing-card" id="cloth-${c.id}" onclick="selectClothing(${c.id})">
       <div class="clothing-emoji">${c.emoji}</div>
@@ -848,7 +869,17 @@ function renderSellerListings() {
   });
 }
 
-init();
+function initializeApp() {
+  loadStorageData();
+  init();
+}
+
+// Run initialization when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  initializeApp();
+}
 
 </script>
 </body>
