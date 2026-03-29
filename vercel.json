@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "buildCommand": "echo 'Build skipped'",
+  "public": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
