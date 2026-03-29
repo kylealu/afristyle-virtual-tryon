@@ -24,6 +24,10 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 const jwtSecret = process.env.JWT_SECRET || 'afristyle_jwt_secret';
+
+if (!process.env.OPENAI_API_KEY) {
+  console.error('⚠️ WARNING: OPENAI_API_KEY not set in environment variables');
+}
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function readJson(storageFile, defaultVal) {
@@ -97,6 +101,10 @@ app.post('/api/tryon', authMiddleware, async (req, res) => {
   const { clothing, style } = req.body;
   if (!clothing || !style) return res.status(400).json({ message: 'clothing and style required' });
 
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ message: 'OpenAI API key not configured on server' });
+  }
+
   try {
     const prompt = `You are a fashion AI for AfriStyle.
 User's selection: ${clothing} - ${style}.
@@ -121,8 +129,18 @@ Return ONLY JSON object with keys: headline, description, tip, occasion, vibe (a
 
     res.json(json);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'OpenAI request failed' });
+    console.error('OpenAI error:', err.message || err);
+    const errorMsg = err.message || 'Unknown error';
+    if (errorMsg.includes('401') || errorMsg.includes('authentication')) {
+      return res.status(401).json({ message: 'OpenAI authentication failed - invalid API key' });
+    }
+    if (errorMsg.includes('429')) {
+      return res.status(429).json({ message: 'OpenAI rate limit exceeded' });
+    }
+    if (errorMsg.includes('timeout')) {
+      return res.status(504).json({ message: 'OpenAI request timed out' });
+    }
+    res.status(500).json({ message: 'OpenAI request failed: ' + errorMsg });
   }
 });
 
