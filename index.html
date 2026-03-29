@@ -422,7 +422,9 @@
 </div>
 
 <script>
+const API_BASE_URL = 'http://localhost:4002/api';
 let currentUser = JSON.parse(localStorage.getItem('afristyle_user') || 'null');
+let authToken = localStorage.getItem('afristyle_token');
 let savedOutfits = JSON.parse(localStorage.getItem('afristyle_wardrobe') || '[]');
 let selectedClothing = null;
 let uploadedImageSrc = null;
@@ -488,6 +490,7 @@ function updateProcessBtn() {
 
 async function processTryOn() {
   if (!uploadedImageSrc || !selectedClothing) return;
+  if (!authToken) { showToast('Please login first', 'error'); return; }
 
   document.getElementById('previewPlaceholder').style.display = 'none';
   document.getElementById('previewResult').style.display = 'none';
@@ -503,32 +506,24 @@ async function processTryOn() {
   }
 
   try {
-    const prompt = `You are a fashion AI for AfriStyle, a virtual try-on platform for African youth.
-
-The user is trying on: "${selectedClothing.name}" — ${selectedClothing.style}.
-
-Return ONLY a raw JSON object (no markdown, no backticks):
-{
-  "headline": "punchy headline, max 6 words, e.g. 'Elegance meets African tradition'",
-  "description": "2-3 sentences: how this outfit looks on the user, fit, cultural feel, style impression",
-  "tip": "one short styling tip for this specific garment",
-  "occasion": "Best for: [specific occasion]",
-  "vibe": ["word1", "word2", "word3"]
-}`;
-
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const resp = await fetch(`${API_BASE_URL}/tryon`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 400,
-        messages: [{ role: "user", content: prompt }]
+        clothing: selectedClothing.name,
+        style: selectedClothing.style
       })
     });
 
-    const data = await resp.json();
-    let raw = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
-    const result = JSON.parse(raw);
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.message || 'API error');
+    }
+
+    const result = await resp.json();
 
     document.getElementById(steps[3]).className = 'loading-step done';
     await delay(300);
@@ -566,7 +561,7 @@ Return ONLY a raw JSON object (no markdown, no backticks):
   } catch (err) {
     loading.style.display = 'none';
     document.getElementById('previewPlaceholder').style.display = 'flex';
-    showToast('❌ Error generating preview', 'error');
+    showToast('❌ ' + (err.message || 'Error generating preview'), 'error');
     console.error(err);
   }
 }
@@ -615,13 +610,24 @@ function login() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass = document.getElementById('loginPassword').value;
   if (!email || !pass) { showToast('Please fill all fields', 'error'); return; }
-  const users = JSON.parse(localStorage.getItem('afristyle_users') || '[]');
-  const user = users.find(u => u.email === email && u.password === pass);
-  if (!user) { showToast('Invalid credentials', 'error'); return; }
-  currentUser = user;
-  localStorage.setItem('afristyle_user', JSON.stringify(user));
-  updateAuthUI(); showPage('home');
-  showToast('👋 Welcome back, ' + user.name + '!', 'success');
+  
+  fetch(`${API_BASE_URL}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: pass })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { showToast(data.error, 'error'); return; }
+    currentUser = data.user;
+    authToken = data.token;
+    localStorage.setItem('afristyle_user', JSON.stringify(data.user));
+    localStorage.setItem('afristyle_token', data.token);
+    updateAuthUI();
+    showPage('home');
+    showToast('👋 Welcome back, ' + data.user.name + '!', 'success');
+  })
+  .catch(err => { showToast('Connection error: ' + err.message, 'error'); console.error(err); });
 }
 
 function register() {
@@ -630,20 +636,31 @@ function register() {
   const pass = document.getElementById('regPassword').value;
   if (!name || !email || !pass) { showToast('Please fill all fields', 'error'); return; }
   if (pass.length < 6) { showToast('Password must be 6+ characters', 'error'); return; }
-  const users = JSON.parse(localStorage.getItem('afristyle_users') || '[]');
-  if (users.find(u => u.email === email)) { showToast('Email already registered', 'error'); return; }
-  const user = { name, email, password: pass };
-  users.push(user);
-  localStorage.setItem('afristyle_users', JSON.stringify(users));
-  currentUser = user;
-  localStorage.setItem('afristyle_user', JSON.stringify(user));
-  updateAuthUI(); showPage('home');
-  showToast('🎉 Welcome, ' + name + '!', 'success');
+  
+  fetch(`${API_BASE_URL}/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password: pass })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { showToast(data.error, 'error'); return; }
+    currentUser = data.user;
+    authToken = data.token;
+    localStorage.setItem('afristyle_user', JSON.stringify(data.user));
+    localStorage.setItem('afristyle_token', data.token);
+    updateAuthUI();
+    showPage('home');
+    showToast('🎉 Welcome, ' + name + '!', 'success');
+  })
+  .catch(err => { showToast('Connection error: ' + err.message, 'error'); console.error(err); });
 }
 
 function logout() {
   currentUser = null;
+  authToken = null;
   localStorage.removeItem('afristyle_user');
+  localStorage.removeItem('afristyle_token');
   updateAuthUI();
   showToast('Logged out', 'success');
 }
@@ -701,72 +718,99 @@ function handleSellerUpload(e) {
 
 function uploadListing() {
   if (!currentUser) { showToast('🔐 Log in to upload items', 'error'); showPage('auth'); return; }
+  if (!authToken) { showToast('Please login first', 'error'); showPage('auth'); return; }
   const name = document.getElementById('sellerItemName').value.trim();
   const category = document.getElementById('sellerCategory').value;
   const price = document.getElementById('sellerPrice').value.trim();
   const desc = document.getElementById('sellerDesc').value.trim();
   if (!name || !category) { showToast('Please fill item name and category', 'error'); return; }
 
-  const listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
-  const item = {
-    id: Date.now(),
-    name, category, price, desc,
-    emoji: categoryEmojis[category] || '👗',
-    imageSrc: sellerImageSrc,
-    seller: currentUser.name,
-    date: new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }),
-    tryOns: 0,
-    active: true
-  };
-  listings.unshift(item);
-  localStorage.setItem('afristyle_listings', JSON.stringify(listings));
+  fetch(`${API_BASE_URL}/seller/listings`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    },
+    body: JSON.stringify({ name, category, price, desc, imageSrc: sellerImageSrc })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.message && data.message.includes('error')) { showToast(data.message, 'error'); return; }
+    
+    // Reset form
+    document.getElementById('sellerItemName').value = '';
+    document.getElementById('sellerCategory').value = '';
+    document.getElementById('sellerPrice').value = '';
+    document.getElementById('sellerDesc').value = '';
+    sellerImageSrc = null;
+    document.getElementById('sellerUploadZone').innerHTML = `
+      <input type="file" accept="image/*" onchange="handleSellerUpload(event)" />
+      <div style="font-size:1.8rem;opacity:0.5">👗</div>
+      <p><strong>Click to upload</strong> garment photo<br>Flat-lay or product image</p>`;
 
-  // Reset form
-  document.getElementById('sellerItemName').value = '';
-  document.getElementById('sellerCategory').value = '';
-  document.getElementById('sellerPrice').value = '';
-  document.getElementById('sellerDesc').value = '';
-  sellerImageSrc = null;
-  document.getElementById('sellerUploadZone').innerHTML = `
-    <input type="file" accept="image/*" onchange="handleSellerUpload(event)" />
-    <div style="font-size:1.8rem;opacity:0.5">👗</div>
-    <p><strong>Click to upload</strong> garment photo<br>Flat-lay or product image</p>`;
-
-  renderSellerListings();
-  showToast('✅ Item listed successfully!', 'success');
+    renderSellerListings();
+    showToast('✅ Item listed successfully!', 'success');
+  })
+  .catch(err => { showToast('Connection error: ' + err.message, 'error'); console.error(err); });
 }
 
 function deleteListing(id) {
-  let listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
-  listings = listings.filter(l => l.id !== id);
-  localStorage.setItem('afristyle_listings', JSON.stringify(listings));
-  renderSellerListings();
-  showToast('Item removed', 'success');
+  if (!authToken) { showToast('Please login first', 'error'); return; }
+  
+  fetch(`${API_BASE_URL}/seller/listings/${id}`, {
+    method: 'DELETE',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    }
+  })
+  .then(r => r.json())
+  .then(data => {
+    renderSellerListings();
+    showToast('Item removed', 'success');
+  })
+  .catch(err => { showToast('Connection error: ' + err.message, 'error'); console.error(err); });
 }
 
 function renderSellerListings() {
-  const listings = JSON.parse(localStorage.getItem('afristyle_listings') || '[]');
-  const myListings = currentUser ? listings.filter(l => l.seller === currentUser.name) : [];
-  const el = document.getElementById('sellerListings');
-
-  document.getElementById('statTotal').textContent = myListings.length;
-  document.getElementById('statActive').textContent = myListings.filter(l => l.active).length;
-  document.getElementById('statTryOns').textContent = myListings.reduce((s, l) => s + (l.tryOns || 0), 0);
-
-  if (!myListings.length) {
-    el.innerHTML = `<div class="empty-listings"><div class="icon">📦</div><p>No items yet. Upload your first clothing item!</p></div>`;
+  if (!currentUser || !authToken) {
+    document.getElementById('sellerListings').innerHTML = `<div class="empty-listings"><div class="icon">🔐</div><p>Log in to manage your listings</p></div>`;
     return;
   }
-  el.innerHTML = myListings.map(l => `
-    <div class="listing-item">
-      <div class="listing-emoji">${l.emoji}</div>
-      <div class="listing-info">
-        <h4>${l.name}</h4>
-        <p>${l.category}${l.price ? ' · ' + Number(l.price).toLocaleString() + ' FCFA' : ''} · ${l.date}</p>
-      </div>
-      <span class="listing-badge">Active</span>
-      <button class="listing-delete" onclick="deleteListing(${l.id})" title="Remove">✕</button>
-    </div>`).join('');
+
+  fetch(`${API_BASE_URL}/seller/listings`, {
+    method: 'GET',
+    headers: { 
+      'Authorization': `Bearer ${authToken}`
+    }
+  })
+  .then(r => r.json())
+  .then(myListings => {
+    const el = document.getElementById('sellerListings');
+
+    document.getElementById('statTotal').textContent = myListings.length;
+    document.getElementById('statActive').textContent = myListings.filter(l => l.active).length;
+    document.getElementById('statTryOns').textContent = myListings.reduce((s, l) => s + (l.tryOns || 0), 0);
+
+    if (!myListings.length) {
+      el.innerHTML = `<div class="empty-listings"><div class="icon">📦</div><p>No items yet. Upload your first clothing item!</p></div>`;
+      return;
+    }
+    el.innerHTML = myListings.map(l => `
+      <div class="listing-item">
+        <div class="listing-emoji">${categoryEmojis[l.category] || '👗'}</div>
+        <div class="listing-info">
+          <h4>${l.name}</h4>
+          <p>${l.category}${l.price ? ' · ' + Number(l.price).toLocaleString() + ' FCFA' : ''} · ${new Date(l.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</p>
+        </div>
+        <span class="listing-badge">Active</span>
+        <button class="listing-delete" onclick="deleteListing(${l.id})" title="Remove">✕</button>
+      </div>`).join('');
+  })
+  .catch(err => {
+    console.error(err);
+    document.getElementById('sellerListings').innerHTML = `<div class="empty-listings"><div class="icon">⚠️</div><p>Error loading listings</p></div>`;
+  });
 }
 
 init();

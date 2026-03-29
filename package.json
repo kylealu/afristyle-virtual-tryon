@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "name": "afristyle-virtual-tryon-backend",
   "version": "1.0.0",
   "description": "Backend for AfriStyle virtual try-on app",
